@@ -200,6 +200,11 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
                 self.proj_out = LoRACompatibleLinear(inner_dim, in_channels)
             else:
                 self.proj_out = LoRACompatibleConv(inner_dim, in_channels, kernel_size=1, stride=1, padding=0)
+            # if use_linear_projection:
+            #     self.proj_out = LoRACompatibleLinear(inner_dim, out_channels)  # 수정: in_channels -> out_channels
+            # else:
+            #     self.proj_out = LoRACompatibleConv(inner_dim, out_channels, kernel_size=1, stride=1, padding=0)  # 수정: in_channels -> out_channels
+
         elif self.is_input_vectorized:
             self.norm_out = nn.LayerNorm(inner_dim)
             self.out = nn.Linear(inner_dim, self.num_vector_embeds - 1)

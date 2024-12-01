@@ -130,38 +130,43 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
     image_logs = []
 
     val_index = 0
-    if args.skip_custom:
-        validation_images = []
-    else:
-        validation_images = [x for x in os.listdir("validation_images") if "_gt." not in x]
+    # if args.skip_custom:
+    #     validation_images = []
+    # else:
+    #     validation_images = [x for x in os.listdir("validation_images") if "_gt." not in x]
+
+    validation_images = args.validation_image
     
     for val_im_name in validation_images + validation_images:
         validation_prompt = ""
         if val_im_name in validation_images:
-            val_image_path = "validation_images" + "/" + val_im_name
+            val_image_path = ("/workspace/controlnet-diffusers-relighting/multilum_images/1536x1024/" + val_im_name).replace(".jpg", ".png")
             validation_image = Image.open(val_image_path).convert("RGB")
-            validation_image = validation_image.resize(image_size, Image.LANCZOS)
-            if args.concat_depth_maps:
-                depth_image_path = val_image_path.replace("validation_images/", "validation_depths/").replace(".png", "_pred.png")
-                depth_image = Image.open(depth_image_path).convert("L")
-                depth_image = depth_image.resize(image_size, Image.LANCZOS)
+            # validation_image = validation_image.resize(image_size, Image.LANCZOS)
+            if args.concat_albedo_maps:
+                # albedo_image_path = val_image_path.replace("validation_images/", "validation_depths/").replace(".png", "_pred.png")
+                # albedo_image = Image.open(albedo_image_path).convert("L")
+                albedo_image_path = "/workspace/IntrinsicAnything/out/albedo_high_res/" + val_im_name
+                albedo_image = Image.open(albedo_image_path.split("_dir")[0] + "_dir_10.png").convert("L") #!!! update this
+                # albedo_image = albedo_image.resize(image_size, Image.LANCZOS)
 
         else:
             val_image_path = (args.images_dir + "/" + val_im_name).replace(".jpg", ".png")
             validation_image = Image.open(val_image_path).convert("RGB")
             image_size = validation_image.size
-            depth_image_path = val_image_path.replace("_exr/", "_depths/").split("_dir")[0] + "_dir_10_pred.png"
-            depth_image = Image.open(depth_image_path).convert("L")
+            albedo_image_path = val_image_path.replace("_exr/", "_depths/").split("_dir")[0] + "_dir_10_pred.png"
+            albedo_image = Image.open(albedo_image_path).convert("L")
 
         encoder_hidden_states = None
         if args.inject_lighting_direction:
             filename = val_image_path.split("/")[-1]
             target_dir = BACKWARD_DIR_IDS[hash(filename) % len(BACKWARD_DIR_IDS)]
             if val_im_name in validation_images:
-                gt_image_path = val_image_path.replace(".png", "_gt.png")
+                # gt_image_path = val_image_path.replace(".png", "_gt.png")
+                gt_image_path = val_image_path
                 if os.path.exists(gt_image_path):
                     gt_image = Image.open(gt_image_path).convert("RGB")
-                    gt_image = gt_image.resize(image_size, Image.LANCZOS)
+                    # gt_image = gt_image.resize(image_size, Image.LANCZOS)
                 else:
                     gt_image = None
             else:
@@ -174,8 +179,8 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
                 with torch.autocast("cuda", dtype=weight_dtype):
                     probe_tensor = TF.to_tensor(probe_image).to(weight_dtype).cuda() * 2 - 1
                     probe_tokens = (controlnet.patch_projection(probe_tensor) + controlnet.patch_embeddings).flatten(2, 3).mT / math.sqrt(2)
-                    # text_encoded = text_encoder(INPUT_IDS.to(accelerator.device)[None])[0]
-                    text_encoded = INPUT_IDS.to(accelerator.device)[None]
+                    # text_encoded = INPUT_IDS.to(accelerator.device)[None]
+                    text_encoded = text_encoder(INPUT_IDS.to(accelerator.device)[None])[0]
                     encoder_hidden_states = torch.cat([text_encoded, probe_tokens], dim=1)
         else:
             gt_image = None
@@ -187,10 +192,10 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
                 controlnet_kwargs = {}
                 if args.inject_lighting_direction:
                     controlnet_kwargs["timestep_cond"] = get_light_dir_encoding(target_dir)[None].cuda()
-                if args.concat_depth_maps:
+                if args.concat_albedo_maps:
                     validation_input = torch.cat([
                         TF.to_tensor(validation_image).to(weight_dtype).cuda()[None],
-                        TF.to_tensor(depth_image).to(weight_dtype).cuda()[None]
+                        TF.to_tensor(albedo_image).to(weight_dtype).cuda()[None]
                     ], dim=1)
                 else:
                     validation_input = validation_image
@@ -614,7 +619,7 @@ def parse_args(input_args=None):
         action="store_true",
     )
     parser.add_argument(
-        "--concat_depth_maps",
+        "--concat_albedo_maps",
         action="store_true",
     )
     parser.add_argument(
@@ -735,9 +740,15 @@ class MyDataset:
                 # **(self.xtras)
             }
             # assert "_exr" in image_path #!!! update this
-            depth_image = Image.open(image_path.replace("_exr/", "_depths/").split("_dir")[0] + "_depth.png").convert("L") #!!! update this
-            result["depth_image"] = depth_image
-            result["depth_pixel_values"] = TF.to_tensor(depth_image)
+            albedo_image_path = "/workspace/IntrinsicAnything/out/albedo_high_res/" + name
+            albedo_image = Image.open(albedo_image_path.split("_dir")[0] + "_dir_10.png").convert("L") #!!! update this
+
+            # assert "_exr" in image_path #!!! update this
+            # albedo_image_path = "/workspace/controlnet-diffusers-relighting/multilum_images/1536x1024/" + name
+            # albedo_image = Image.open(albedo_image_path.split("_dir")[0] + "_depth.png").convert("L") #!!! update this
+
+            result["albedo_image"] = albedo_image
+            result["albedo_pixel_values"] = TF.to_tensor(albedo_image)
 
         except UnidentifiedImageError:
             print(f"WARNING: invalid file for scene {image_path}, will return another random batch item")
@@ -766,10 +777,10 @@ def collate_fn(examples):
         "target_dir": target_dir,
     }
 
-    if args.concat_depth_maps:
-        depth_pixel_values = torch.stack([example["depth_pixel_values"] for example in examples])
-        depth_pixel_values = depth_pixel_values.to(memory_format=torch.contiguous_format).float()
-        result["depth_pixel_values"] = depth_pixel_values
+    if args.concat_albedo_maps:
+        albedo_pixel_values = torch.stack([example["albedo_pixel_values"] for example in examples])
+        albedo_pixel_values = albedo_pixel_values.to(memory_format=torch.contiguous_format).float()
+        result["albedo_pixel_values"] = albedo_pixel_values
 
     result["input_ids"] = input_ids
 
@@ -828,6 +839,14 @@ def main(args):
 
     noise_scheduler = DDIMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
 
+    # import correct text encoder class
+    text_encoder_cls = import_model_class_from_model_name_or_path(args.pretrained_model_name_or_path, args.revision)
+
+    # Load scheduler and models
+    text_encoder = text_encoder_cls.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+    )
+
     vae = AutoencoderKL.from_pretrained(
         args.pretrained_model_name_or_path,
         subfolder="vae",
@@ -840,17 +859,22 @@ def main(args):
 
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
-        controlnet = ControlNetModel.from_pretrained(args.controlnet_model_name_or_path, conditioning_channels=4 if args.concat_depth_maps else 3)
+        print("Loading existing controlnet weights")
+        controlnet = ControlNetModel.from_pretrained(args.controlnet_model_name_or_path, conditioning_channels=4 if args.concat_albedo_maps else 3)
     else:
+        print("Initializing controlnet weights from unet")
         logger.info("Initializing controlnet weights from unet")
-        controlnet = ControlNetModel.from_unet(unet, conditioning_channels=4 if args.concat_depth_maps else 3)
+        controlnet = ControlNetModel.from_unet(unet, conditioning_channels=4 if args.concat_albedo_maps else 3)
 
     @torch.no_grad()
     def modify_layers(controlnet):
         if args.inject_lighting_direction:
-            controlnet.time_embedding.cond_proj = torch.nn.Linear(len(get_light_dir_encoding(0)), controlnet.time_embedding.in_channels, bias=False)
+            controlnet.time_embedding.cond_proj = torch.nn.Linear(len(get_light_dir_encoding(0)[0]), controlnet.time_embedding.in_channels, bias=False)
     
     modify_layers(controlnet)
+
+    print("controlnet structure af mod", controlnet)
+
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
         # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
@@ -873,7 +897,7 @@ def main(args):
                 model = models.pop()
 
                 # load diffusers style into model
-                load_model = ControlNetModel.from_pretrained(input_dir, subfolder="controlnet", conditioning_channels=4 if args.concat_depth_maps else 3, extra_init_fn=modify_layers)
+                load_model = ControlNetModel.from_pretrained(input_dir, subfolder="controlnet", conditioning_channels=4 if args.concat_albedo_maps else 3, extra_init_fn=modify_layers)
                 load_model.state_dict().keys()
                 model.register_to_config(**load_model.config)
 
@@ -885,7 +909,7 @@ def main(args):
 
     vae.requires_grad_(False)
     unet.requires_grad_(False)
-    # text_encoder.requires_grad_(False)
+    text_encoder.requires_grad_(False)
     controlnet.train()
 
     if not args.disable_xformers_memory_efficient_attention:
@@ -994,7 +1018,7 @@ def main(args):
     # Move vae, unet and text_encoder to device and cast to weight_dtype
     vae.to(accelerator.device, dtype=weight_dtype)
     unet.to(accelerator.device, dtype=weight_dtype)
-    # text_encoder.to(accelerator.device, dtype=weight_dtype)
+    text_encoder.to(accelerator.device, dtype=weight_dtype)
     lpips.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
@@ -1134,17 +1158,19 @@ def main(args):
 
                     # Get the text embedding for conditioning
                     if text_encoded is None: 
-                        encoder_hidden_states = text_encoded = batch["input_ids"]
+                        # encoder_hidden_states = text_encoded = None
+                        encoder_hidden_states = text_encoded = text_encoder(batch["input_ids"])[0]
                     else:
                         encoder_hidden_states = text_encoded
                     controlnet_image = batch["conditioning_pixel_values"].to(dtype=weight_dtype)
-                    if args.concat_depth_maps:
+                    if args.concat_albedo_maps:
                         if random.random() < args.dropout_rgb:
                             controlnet_image = controlnet_image * 0
-                        controlnet_image = torch.cat([controlnet_image, batch["depth_pixel_values"].to(dtype=weight_dtype)], dim=1)
+                        controlnet_image = torch.cat([controlnet_image, batch["albedo_pixel_values"].to(dtype=weight_dtype)], dim=1)
                     
                     encoder_hidden_states_controlnet = encoder_hidden_states
 
+                    # print("~~~~~~~~", noisy_latents, controlnet_cond)
                     # down_block_res_samples, mid_block_res_sample = controlnet(
                     down_block_res_samples, mid_block_res_sample = controlnet(
                         noisy_latents,
@@ -1152,7 +1178,7 @@ def main(args):
                         encoder_hidden_states=encoder_hidden_states_controlnet,
                         controlnet_cond=controlnet_image,
                         return_dict=False,
-                        timestep_cond=batch["target_dir"] if args.inject_lighting_direction else None
+                        timestep_cond=batch["target_dir"][0] if args.inject_lighting_direction else None
                     )
 
                     # Predict the noise residual

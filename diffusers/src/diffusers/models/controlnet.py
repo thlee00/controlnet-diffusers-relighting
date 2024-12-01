@@ -772,6 +772,8 @@ class ControlNetModel(ModelMixin, ConfigMixin, FromOriginalControlnetMixin):
         controlnet_cond = self.controlnet_cond_embedding(controlnet_cond)
         sample = sample + controlnet_cond
 
+        # print("~~~~~~~~", noisy_latents, controlnet_cond)
+
         # 3. down
         down_block_res_samples = (sample,)
         for downsample_block in self.down_blocks:

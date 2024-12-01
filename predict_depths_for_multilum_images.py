@@ -17,9 +17,9 @@ import torch
 from diffusers import AsymmetricAutoencoderKL, MarigoldDepthPipeline
 import torchvision.transforms.functional as TF
 
-RESOLUTIONS = [(1536, 1024), (768, 512)]
+RESOLUTIONS = [(1536, 1024)]#, (768, 512)]
 
-depth_pipeline: MarigoldDepthPipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-lcm-v1-0", device="cuda")
+depth_pipeline: MarigoldDepthPipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-lcm-v1-0").to("cuda")
 depth_pipeline.dtype = torch.float32
 
 target_path = "multilum_images/{height}x{width}/" 
@@ -40,7 +40,7 @@ def prepare_scene(scene):
             for (height, width) in RESOLUTIONS:       
                 color_map = TF.to_tensor(image.resize((height, width), Image.LANCZOS))[None]
                 with torch.autocast("cuda", enabled=True, dtype=torch.float32):
-                    depth_pred = depth_pipeline(color_map.cuda()).prediction
+                    depth_pred = depth_pipeline(color_map.to("cuda")).prediction
                 depth_map = Image.fromarray((depth_pred[0, 0] * 255).astype(np.uint8))
                 depth_map.save(out_path.format(height=height, width=width).replace("_dir_10.png", "_depth.png"))
         

@@ -805,7 +805,6 @@ class TextualInversionLoaderMixin:
         Returns:
             `str`: The converted prompt
         """
-        print(tokenizer)
         tokens = tokenizer.tokenize(prompt)
         unique_tokens = set(tokens)
         for token in unique_tokens:

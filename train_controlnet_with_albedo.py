@@ -93,7 +93,7 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
         args.pretrained_model_name_or_path,
         vae=vae,
         text_encoder=text_encoder,
-        tokenizer=tokenizer,
+        # tokenizer=tokenizer,
         unet=unet,
         controlnet=controlnet,
         safety_checker=None,
@@ -199,6 +199,7 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
                     ], dim=1)
                 else:
                     validation_input = validation_image
+                print(pipeline.tokenizer)
                 image = pipeline(
                     prompt=validation_prompt, 
                     image=validation_input, 
@@ -859,11 +860,9 @@ def main(args):
 
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
-        print("Loading existing controlnet weights")
-        controlnet = ControlNetModel.from_pretrained(args.controlnet_model_name_or_path, conditioning_channels=4 if args.concat_albedo_maps else 3)
+        controlnet = ControlNetModel.from_pretrained(args.controlnet_model_name_or_path, conditioning_channels=4 if args.concat_albedo_maps else 3, use_safetensors=True)
     else:
         print("Initializing controlnet weights from unet")
-        logger.info("Initializing controlnet weights from unet")
         controlnet = ControlNetModel.from_unet(unet, conditioning_channels=4 if args.concat_albedo_maps else 3)
 
     @torch.no_grad()
@@ -874,6 +873,7 @@ def main(args):
     modify_layers(controlnet)
 
     print("controlnet structure af mod", controlnet)
+    print(args.validation_steps)
 
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
@@ -1090,7 +1090,8 @@ def main(args):
             weight_dtype,
             global_step,
             num_samples,
-            save_grid=save_grid
+            save_grid=save_grid,
+            text_encoder=text_encoder,
         )
         os.makedirs(val_dir)
 
@@ -1210,7 +1211,8 @@ def main(args):
                 if accelerator.sync_gradients:
                     if accelerator.is_main_process:
                         if global_step % args.validation_steps == 0 and not (global_step == 0 and args.skip_first_val):
-                            run_val(f"{args.output_dir}/val_results/{global_step // args.validation_steps:03d}", args.num_validation_images)
+                            pass
+                            # run_val(f"{args.output_dir}/val_results/{global_step // args.validation_steps:03d}", args.num_validation_images)
                     
                     global_step += 1
 

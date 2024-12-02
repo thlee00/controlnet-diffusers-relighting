@@ -16,6 +16,7 @@ from itertools import islice
 from relighting.inference_pipeline import InferencePipeline
 from relighting.match_color import * 
 
+controlnet_path = "/workspace/controlnet-diffusers-relighting/output/2024-12-01T21:21:00,058859670+00:00/checkpoint-3000/controlnet/diffusion_pytorch_model.safetensors"
 
 @dataclass
 class Conf:
@@ -33,7 +34,7 @@ class Conf:
 
 conf = tyro.cli(tyro.conf.FlagConversionOff[Conf]) 
 pipeline = InferencePipeline(
-    f"weights/controlnet_{conf.width}x{conf.height}.safetensors",
+    controlnet_path,
     f"weights/decoder_{conf.width}x{conf.height}.safetensors",
     dtype=dict(bf16=torch.bfloat16, fp16=torch.float16, fp32=torch.float32)[conf.dtype]
 )

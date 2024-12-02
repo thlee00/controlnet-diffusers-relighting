@@ -212,10 +212,55 @@ def _load_decoder_pipeline(ckpt_path: str):
     _load_weights(vae, ckpt_path)
     return vae 
 
+# def _load_weights(model, ckpt_path):
+#     from safetensors import safe_open
+#     state_dict = {}
+#     with safe_open(ckpt_path, framework="pt", device=0) as f: 
+#         for key in f.keys():
+#             state_dict[key] = f.get_tensor(key)
+#     model.load_state_dict(state_dict)
+
 def _load_weights(model, ckpt_path):
     from safetensors import safe_open
+
     state_dict = {}
-    with safe_open(ckpt_path, framework="pt", device=0) as f: 
+    adjusted_state_dict = {}
+
+    # 체크포인트에서 가중치 로드
+    with safe_open(ckpt_path, framework="pt", device=0) as f:
         for key in f.keys():
             state_dict[key] = f.get_tensor(key)
-    model.load_state_dict(state_dict)
+
+    # 모델의 현재 state_dict 불러오기
+    model_state_dict = model.state_dict()
+
+    # Shape mismatch 조정
+    for key, param in state_dict.items():
+        if key in model_state_dict:
+            model_param_shape = model_state_dict[key].shape
+            if param.shape != model_param_shape:
+                print(f"Adjusting shape for {key}: {param.shape} -> {model_param_shape}")
+                
+                # 1. 4D -> 2D 변환
+                if param.dim() == 4 and model_state_dict[key].dim() == 2:
+                    param = param.squeeze(-1).squeeze(-1)  # 마지막 두 차원을 제거
+
+                # 2. 2D -> 4D 변환
+                elif param.dim() == 2 and model_state_dict[key].dim() == 4:
+                    param = param.unsqueeze(-1).unsqueeze(-1)  # 마지막 두 차원을 추가
+
+                # 변환 후에도 shape이 맞지 않으면 오류 발생
+                if param.shape != model_state_dict[key].shape:
+                    raise ValueError(f"Shape mismatch cannot be resolved for {key}: {param.shape} -> {model_state_dict[key].shape}")
+                
+                # 수정된 가중치 저장
+                adjusted_state_dict[key] = param
+            else:
+                # Shape이 일치하면 그대로 저장
+                adjusted_state_dict[key] = param
+        else:
+            print(f"Skipping {key} as it is not in the model state dict.")
+    
+    # 조정된 가중치로 모델 업데이트
+    model.load_state_dict(adjusted_state_dict, strict=False)
+    print("Weights loaded successfully with adjusted shapes.")
